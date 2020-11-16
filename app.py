@@ -23,7 +23,7 @@ def load_data():
     '''
     req_cols1 = ['Accident_Index','Longitude','Latitude', 'Date', 'Time', 'Number_of_Casualties', 'Weather_Conditions']
     req_cols2 = ['Accident_Index', 'Casualty_Severity']
-    df1 = pd.read_csv('https://raw.githubusercontent.com/HamoyeHQ/stage-f-01-road-safety/master/data/dftRoadSafety_Accidents_2016.csv', usecols=req_cols)
+    df1 = pd.read_csv('https://raw.githubusercontent.com/HamoyeHQ/stage-f-01-road-safety/master/data/dftRoadSafety_Accidents_2016.csv', usecols=req_cols1)
     df2 = pd.read_csv('https://raw.githubusercontent.com/HamoyeHQ/stage-f-01-road-safety/master/data/Cas.csv', usecols=req_cols2)
 
     #----------------------Merging the Datasets--------
