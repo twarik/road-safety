@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from bokeh.plotting import figure
-from bokeh.models import HoverTool, ColumnDataSource
+from bokeh.models import HoverTool, ColumnDataSource, CategoricalColorMapper
 from bokeh.tile_providers import get_provider, Vendors
 
 import warnings
@@ -11,6 +11,8 @@ warnings.filterwarnings('ignore')
 
 # Define plot navigation tools
 TOOLS = 'pan,wheel_zoom,zoom_in,zoom_out,box_zoom,reset,save'
+# Instantiate CategoricalColorMapper that Categorically maps Casualty Severity into colors.
+color_mapper = CategoricalColorMapper(factors=['Slight', 'Serious', 'Fatal'], palette=['red', 'blue', 'green'])
 
 st.sidebar.markdown('''# Road Safety Analysis''')
 
@@ -19,22 +21,30 @@ def load_data():
     '''
     Function to read-in the dataset
     '''
-    req_cols = ['Longitude','Latitude', 'Date', 'Time', 'Number_of_Casualties', 'Weather_Conditions']
+    req_cols1 = ['Accident_Index','Longitude','Latitude', 'Date', 'Time', 'Number_of_Casualties', 'Weather_Conditions']
+    req_cols2 = ['Accident_Index', 'Casualty_Severity']
     df1 = pd.read_csv('https://raw.githubusercontent.com/HamoyeHQ/stage-f-01-road-safety/master/data/dftRoadSafety_Accidents_2016.csv', usecols=req_cols)
+    df2 = pd.read_csv('https://raw.githubusercontent.com/HamoyeHQ/stage-f-01-road-safety/master/data/Cas.csv', usecols=req_cols2)
 
+    #----------------------Merging the Datasets--------
+    df = pd.merge(df1, df2, on=['Accident_Index'])
     #----------------------FEATURE ENGINEERING AND TRANSFORMATION-------------------------------------
-    df1['Datetime'] = df1['Date'] + ' ' + df1['Time']  + ':00'
-    df1['Datetime'] = pd.to_datetime(df1['Datetime'])
+    df['Datetime'] = df['Date'] + ' ' + df['Time']  + ':00'
+    df['Datetime'] = pd.to_datetime(df['Datetime'])
 
-    hotspots = df1.groupby(by=['Longitude','Latitude','Datetime']).mean()[['Number_of_Casualties','Weather_Conditions']]
+    hotspots = df.groupby(by=['Longitude','Latitude','Datetime', 'Casualty_Severity']).mean()[['Number_of_Casualties','Weather_Conditions']]
     hotspots.Weather_Conditions = hotspots.Weather_Conditions.astype(int)
     hotspots['circle_sizes'] = hotspots['Number_of_Casualties'] * 20 / hotspots['Number_of_Casualties'].max()
     hotspots.reset_index(inplace=True)
     hotspots['time'] = hotspots.Datetime.dt.hour
 
+    Severity = {1 : 'Fatal', 2 : 'Serious', 3 : 'Slight'}
+    hotspots['Casualty_Severity'].replace(Severity, inplace=True)
+    hotspots.drop(columns='Datetime', inplace=True)
+
     return hotspots
 
-def create_figure(TOOLS, height=400):
+def create_figure(TOOLS, height, source):
     '''
     Function to Create a new figure for plotting.
     '''
@@ -45,7 +55,15 @@ def create_figure(TOOLS, height=400):
     tile_provider = get_provider(Vendors.OSM)
     # add the back ground basemap
     fig.add_tile(tile_provider)
-
+    # Add accident points using coordinates ('Longitude' & 'Latitude')
+    fig.circle(x='LON',
+                y='LAT',
+                size='circle_sizes',
+                fill_alpha=0.1,
+                source=source,
+                color={'field': 'Casualty_Severity', 'transform': color_mapper},
+                legend_field='Casualty_Severity'
+                )
     return fig
 
 def hover(tips):
@@ -82,20 +100,11 @@ if status == 'Select time of the day':
     # Tell Bokeh to use 'hotspots' as the source of the data
     data_source = ColumnDataSource(data=wgs84_to_web_mercator(defaultdata))
 
-    p = create_figure(TOOLS=TOOLS, height=500)
-
-    # Add accident points using coordinates ('Longitude' & 'Latitude')
-    p.circle(x='LON',
-             y='LAT',
-             size='circle_sizes',
-             line_color="#FF0000",
-             fill_color="#FF0000",
-             fill_alpha=0.05,
-             source=data_source)
-
-    h = hover([("No. of Casualties", "@Number_of_Casualties"), ("(Long, Lat)", "(@Longitude, @Latitude)")])
+    p = create_figure(TOOLS=TOOLS, height=500, source=data_source)
+    h = hover([("No. of Casualties", "@Number_of_Casualties"),
+                ("(Long, Lat)", "(@Longitude, @Latitude)"),
+                ("Severity", "@Casualty_Severity"),])
     p.add_tools(h)
-
     st.bokeh_chart(p, use_container_width=True)
 
 else:
@@ -104,13 +113,11 @@ else:
                           'Fog or mist' : 7, 'Other' : 8, 'Unknown' : 9}
     w = [i for i in Weather_Conditions.keys()]
 
-    weather = st.sidebar.selectbox( 'Select weather Condition:',
-                                    tuple(w))
+    weather = st.sidebar.selectbox( 'Select weather Condition:', tuple(w))
     size = st.sidebar.slider("Zoom accident points:", 10, 40, 20)
 
-
     wi = Weather_Conditions[weather]
-    f'#### Spatial distribution of accident hotspots when the weather_Condition is {weather}'
+    f'#### Spatial distribution of accident hotspots when the weather condition is {weather}'
 
     defaultdata = data[data.Weather_Conditions == wi]
     defaultdata['circle_sizes'] = defaultdata['Number_of_Casualties'] * size / defaultdata['Number_of_Casualties'].max()
@@ -118,19 +125,11 @@ else:
     # Tell Bokeh to use 'hotspots' as the source of the data
     data_source = ColumnDataSource(data=wgs84_to_web_mercator(defaultdata))
 
-    p = create_figure(TOOLS=TOOLS, height=500 )
-    # Add accident points using coordinates ('Longitude' & 'Latitude')
-    p.circle(x='LON',
-             y='LAT',
-             size='circle_sizes',
-             line_color="#FF0000",
-             fill_color="#FF0000",
-             fill_alpha=0.05,
-             source=data_source)
-
-    h = hover([("No. of Casualties", "@Number_of_Casualties"), ("(Long, Lat)", "(@Longitude, @Latitude)")])
+    p = create_figure(TOOLS=TOOLS, height=500, source=data_source)
+    h = hover([("No. of Casualties", "@Number_of_Casualties"),
+                ("(Long, Lat)", "(@Longitude, @Latitude)"),
+                ("Severity", "@Casualty_Severity"),])
     p.add_tools(h)
-
     st.bokeh_chart(p, use_container_width=True)
 
 st.sidebar.markdown('''
